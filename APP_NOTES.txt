@@ -1,0 +1,113 @@
+EMS (React) — App Notes
+
+Last updated: 2026-02-03
+Purpose: brief developer-facing documentation describing app behavior, data model, implemented logic, and per-file responsibilities.
+
+---
+Quick start
+- Install & run: `npm install` (if needed) then `npm run dev` → http://localhost:5173
+- Admin credentials (dev): admin@me.com / 123
+- Example employee creds (from `src/utils/LocalStorage.jsx`): e@1.com / 123, e@2.com / 123, ...
+
+App overview (high level)
+- Single-page React app (Vite) that simulates a simple Employee Management / Task Assignment system.
+- Two roles: `admin` and `employee`.
+  - Admin: create/assign tasks and view all tasks.
+  - Employee: sees own tasks and can act on them (accept/complete/etc.).
+- Data persistence is implemented using `localStorage` (no backend).
+- Shared state for employees is provided via `AuthContext` (in-memory + localStorage sync).
+- Real-time-ish updates between admin & employee views use a CustomEvent: `ems:employee-updated`.
+
+Data model (core shapes)
+- employees[] (stored in `localStorage` as `employees`)
+  - employee: {
+      id: number,
+      name: string,
+      email: string,
+      password: string, // plaintext in this demo
+      taskCounts: { active, newTask, completed, taskFail },
+      tasks: [ { tasktitle, taskdescription, taskdate, category, active, newTask, completed, taskFail } ]
+    }
+- admin[] (stored in `localStorage` as `admin`) — minimal demo object
+- loggedInUser (stored in `localStorage` as `loggedInUser`)
+  - shape: { role: 'admin' } OR { role: 'employee', data: <employee-object> }
+
+Important runtime behaviors / logic
+- App boot: `App.jsx` reads `localStorage.loggedInUser` and hydrates UI state (role + employee data).
+- Auth: lightweight — `Login.jsx` calls `handleLogin` in `App.jsx`. Admin login is hardcoded; employee login checks `AuthContext` employees.
+- Task creation (admin): `CreateTask.jsx` updates the chosen employee's `tasks` and `taskCounts`, writes `localStorage.employees`, updates AuthContext and dispatches `ems:employee-updated` if the assigned employee is currently logged in.
+- Header: `Header.jsx` reads `loggedInUser` / `props.data` and shows `Hello Admin` or `Hello <employee name>`; logout removes `loggedInUser` and notifies parent.
+
+Event & sync contract
+- Event: `ems:employee-updated` with `detail` set to the updated employee object.
+- Consumers: `App.jsx` listens to update the currently-logged-in employee view instantly.
+
+Where state is stored / updated
+- Source of truth for employees: `AuthContext` (context state) + persisted to `localStorage.employees` via `CreateTask.jsx` and `AuthProvider` initialization.
+- Session: `localStorage.loggedInUser` (role + optional employee data).
+
+Per-file (what it does & where to change)
+Root / tooling
+- `package.json` — scripts and deps (Vite, React, Tailwind, ESLint).
+- `vite.config.js` — dev server / build config.
+- `tailwind.config.js` & `index.css` — styling setup.
+- `eslint.config.js` — lint rules.
+- `index.html` — app entry HTML.
+
+Public / assets
+- `public/` — static public assets (served by Vite).
+- `src/assets/` — image/static assets used by components (look here when adding logos/icons).
+
+Top-level React
+- `src/main.jsx` — React entry; mounts App and wraps providers (if present).
+- `src/App.jsx` — application root: routing between Login, AdminDashboard, EmployeeDashboard; holds `handleLogin` and listens for `ems:employee-updated`.
+- `src/index.css`, `src/App.css` — global styles and component-specific CSS.
+
+Context & utils
+- `src/context/AuthProvider.jsx` — initializes `employees` from `LocalStorage.jsx` and exposes `[userData, setUserData]` via React Context. Update here to centralize session logic or persist changes.
+- `src/utils/LocalStorage.jsx` — demo seed data and helper `setLocalStorage()` / `getLocalStorage()`; modify seed data here.
+
+Auth
+- `src/components/auth/Login.jsx` — login form; calls `handleLogin(email, password)` from `App.jsx`. Improve: replace alert with inline validation UI and error states.
+
+Shared UI
+- `src/components/other/Header.jsx` — shows greeting (Admin or employee name) and log out button. Uses `localStorage.loggedInUser` and `props.data`.
+- `src/components/other/CreateTask.jsx` — Admin task-creation + assign-to-employee UI. Key logic:
+  - validates input, finds employee by name, appends task to employee.tasks, updates employee.taskCounts, updates AuthContext, persists `employees` to localStorage, and dispatches `ems:employee-updated` when appropriate.
+- `src/components/other/AllTask.jsx` — admin view of all tasks (list); augment to add filters/sorting.
+- `src/components/other/TaskListN.jsx` — (compact task summary area) — used on employee dashboard.
+
+Dashboards
+- `src/components/Dashboard/AdminDashboard.jsx` — mounts `Header`, `CreateTask`, and `AllTask` for admin.
+- `src/components/Dashboard/EmployeeDashboard.jsx` — mounts `Header`, `TaskListN`, and `TaskList` for the employee and passes employee `data` as prop.
+
+Task list components
+- `src/components/TaskList/TaskList.jsx` — renders tasks for the logged-in employee using status flags to choose which card to render.
+- `src/components/TaskList/NewTask.jsx` — UI for a new/unaccepted task card.
+- `src/components/TaskList/AcceptTask.jsx`, `CompleteTask.jsx`, `FailedTask.jsx` — individual task state cards (accept/complete/fail flows live here).
+
+Where to extend / implement additional features (quick pointers)
+- Centralize session & mutation logic in `AuthProvider.jsx` (move login/logout/createTask persistence there).
+- Replace name-based assignment with `employee.id` or `email` to avoid collisions (change `CreateTask.jsx`).
+- Add optimistic UI + server sync later if adding backend.
+- Add unit tests (Jest + React Testing Library) for: login, CreateTask, App event handling.
+
+Developer notes / gotchas
+- Inconsistent naming: some task keys use `tasktitle` (lowercase t) while other code may expect camelCase. Follow the existing shape used by the UI when changing schemas.
+- Passwords are plaintext in `LocalStorage.jsx` — acceptable only for demo.
+- The app relies on `localStorage` for persistence and manual seeding via `setLocalStorage()` — run that utility when resetting data.
+- Event-based sync (`ems:employee-updated`) is minimal — if you add more cross-window or multi-tab behavior, consider using BroadcastChannel or a backend push.
+
+Recommended next PRs (small, high-value)
+1. Show success toast when admin assigns a task (UX).  
+2. Use `email`/`id` instead of `name` for assignment and in the `CreateTask` select.  
+3. Centralize session + persistence in `AuthProvider`.  
+4. Add unit & e2e tests for assign/login flows.  
+5. Add input sanitization & client-side validations.
+
+Contacts / pointers
+- Event name to watch for: `ems:employee-updated` (used by `CreateTask.jsx` and `App.jsx`).
+- Seed data and example employees: `src/utils/LocalStorage.jsx`.
+
+---
+If you want this as a Markdown README, a more formal developer CONTRIBUTING.md, or a short PR with the tests and a success toast — tell me which and I will create it next.
